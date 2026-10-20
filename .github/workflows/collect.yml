@@ -1,42 +1,46 @@
-   name: 따릉이 실시간 수집
+name: 따릉이 실시간 수집
 
-   on:
-     schedule:
-       - cron: "*/10 * * * *"   # 10분마다 (GitHub 사정으로 몇 분씩 늦어질 수 있음)
-     workflow_dispatch:          # Actions 탭에서 수동 실행 버튼
+on:
+  schedule:
+    - cron: "17 */3 * * *"
+  workflow_dispatch:
 
-   permissions:
-     contents: write
+permissions:
+  contents: write
 
-   concurrency:
-     group: collect
-     cancel-in-progress: false
+concurrency:
+  group: collect
+  cancel-in-progress: false
 
-   jobs:
-     collect:
-       runs-on: ubuntu-latest
-       timeout-minutes: 5
-       steps:
-         - uses: actions/checkout@v4
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    steps:
+      - uses: actions/checkout@v4
 
-         - uses: actions/setup-python@v5
-           with:
-             python-version: "3.12"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-         - run: pip install requests
+      - run: pip install requests
 
-         - name: 수집
-           env:
-             SEOUL_API_KEY: ${{ secrets.SEOUL_API_KEY }}
-           run: python collect_once.py
-
-         - name: 저장소에 커밋
-           run: |
-             git config user.name "ttareungi-bot"
-             git config user.email "actions@github.com"
-             git add data
-             git commit -m "수집 $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M')" || exit 0
-             for i in 1 2 3; do
-               git pull --rebase && git push && break
-               sleep 5
-             done
+      - name: 10분마다 수집 (약 5시간 20분)
+        env:
+          SEOUL_API_KEY: ${{ secrets.SEOUL_API_KEY }}
+        run: |
+          git config user.name "ttareungi-bot"
+          git config user.email "actions@github.com"
+          END=$(( $(date +%s) + 320*60 ))
+          while [ "$(date +%s)" -lt "$END" ]; do
+            python collect_once.py || echo "이번 회차 실패, 다음 회차로 넘어감"
+            git add data
+            if git commit -q -m "수집 $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M')"; then
+              for i in 1 2 3; do
+                git pull -q --rebase && git push -q && break
+                sleep 5
+              done
+            fi
+            NOW=$(date +%s)
+            sleep $(( 600 - NOW % 600 ))
+          done
